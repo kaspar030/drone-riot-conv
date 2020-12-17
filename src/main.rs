@@ -95,15 +95,15 @@ mod drone {
 
 async fn convert_handler(request: drone::Request) -> Result<impl warp::reply::Reply> {
     const PARALLELISM_MAX: usize = 64;
+    println!("drone-riot-conv: handling request");
 
-    println!("--- in:\n{}", &request.config.data);
     let mut result = String::new();
     for (n, doc) in request.config.data.split("\n---\n").enumerate() {
         let parsed: drone::Pipeline = match serde_yaml::from_str(doc) {
             Ok(val) => val,
             Err(e) => {
                 println!(
-                    "warning: error parsing yaml document {}: {}. passing through.",
+                    "drone-riot-conv: warning: error parsing yaml document {}: {}. passing through.",
                     e,
                     n + 1
                 );
@@ -133,12 +133,12 @@ async fn convert_handler(request: drone::Request) -> Result<impl warp::reply::Re
         }
     }
 
-    println!("--- out:\n{}", &result);
     Ok(warp::reply::json(&drone::Config { data: result }))
 }
 
 #[tokio::main]
 async fn main() {
+    println!("drone-riot-conv: started");
     let convert = warp::post()
         .and(warp::path("convert"))
         .and(warp::body::json())
