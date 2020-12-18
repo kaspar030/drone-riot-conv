@@ -1,3 +1,5 @@
+use lazy_static::lazy_static;
+use regex::Regex;
 use warp::Filter;
 
 type Result<T> = std::result::Result<T, warp::Rejection>;
@@ -95,18 +97,28 @@ mod drone {
 
 async fn convert_handler(request: drone::Request) -> Result<impl warp::reply::Reply> {
     const PARALLELISM_MAX: usize = 64;
+    lazy_static! {
+        static ref SEPERATOR: Regex = Regex::new(r"(?m)^---\n").unwrap();
+    }
+
     println!("drone-riot-conv: handling request");
 
     let mut result = String::new();
-    for (n, doc) in request.config.data.split("\n---\n").enumerate() {
+    for (n, doc) in SEPERATOR.split(&request.config.data).enumerate() {
+        if doc.len() == 0 {
+            println!("drone-riot-conv: warning: skipping empty document");
+            continue;
+        }
+        result += "---\n";
         let parsed: drone::Pipeline = match serde_yaml::from_str(doc) {
             Ok(val) => val,
             Err(e) => {
                 println!(
                     "drone-riot-conv: warning: error parsing yaml document {}: {}. passing through.",
+                    n + 1,
                     e,
-                    n + 1
                 );
+                println!("passing through {:?}", &doc);
                 result += doc;
                 continue;
             }
@@ -115,7 +127,7 @@ async fn convert_handler(request: drone::Request) -> Result<impl warp::reply::Re
         if let Some(mut value) = parsed.parallelism {
             if value > PARALLELISM_MAX {
                 println!(
-                    "convert_handler: limiting parallelism value to {}",
+                    "drone-riot-conv: limiting parallelism value to {}",
                     PARALLELISM_MAX
                 );
                 value = PARALLELISM_MAX;
@@ -126,12 +138,14 @@ async fn convert_handler(request: drone::Request) -> Result<impl warp::reply::Re
                 instance.parallelism = None;
                 result += &serde_yaml::to_string(&instance)
                     .map_err(|e| warp::reject::custom(error::Error::DroneYamlError(e)))?;
-                result += "\n";
             }
         } else {
+            println!("no parallelism: {:?}", &doc);
             result += doc;
         }
     }
+
+    //println!("out: {:?}", &result);
 
     Ok(warp::reply::json(&drone::Config { data: result }))
 }
